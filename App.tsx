@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { generateQuiz } from './services/geminiService';
+import { generateQuiz, generateArticleFromTopicId } from './services/geminiService';
 import { Quiz, Question, QuestionType, QuizHistoryGroup, QuizAttempt, GenerationProgress } from './types';
 import { getHistory, saveQuizAttempt, deleteHistoryGroup, getLastUser, setLastUser } from './services/historyService';
 import {
@@ -9,6 +9,7 @@ import {
 } from './components/Icons';
 
 type AppState = 'login' | 'input' | 'loading' | 'error' | 'quiz' | 'results' | 'analysis' | 'review' | 'select_attempt';
+type InputMode = 'paste' | 'generate';
 
 const App: React.FC = () => {
     // App & User State
@@ -20,6 +21,8 @@ const App: React.FC = () => {
     const [article, setArticle] = useState<string>('');
     const [quiz, setQuiz] = useState<Quiz | null>(null);
     const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
+    const [inputMode, setInputMode] = useState<InputMode>('paste');
+    const [topicId, setTopicId] = useState<number>(1);
     
     // Quiz Taking State
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
@@ -61,14 +64,43 @@ const App: React.FC = () => {
     };
 
     const handleGenerateQuiz = useCallback(async () => {
-        if (!article.trim() || !currentUserId) return;
+        if (!currentUserId) return;
+        if (inputMode === 'paste' && !article.trim()) return;
+        if (inputMode === 'generate' && (topicId < 1 || topicId > 40)) {
+            setError("Please enter a valid Topic ID between 1 and 40.");
+            setAppState('error');
+            return;
+        }
+
         setAppState('loading');
         setError(null);
         setQuiz(null);
         setCurrentQuizContext({ historyGroupId: null }); // It's a new quiz
-        setGenerationProgress({ stage: 'Initializing...', percentage: 0 });
+        
         try {
-            const generatedQuiz = await generateQuiz(article, setGenerationProgress);
+            let articleToQuiz = article;
+            let baseProgress = 0;
+
+            if (inputMode === 'generate') {
+                setGenerationProgress({ stage: `Generating article for Topic ID: ${topicId}...`, percentage: 5 });
+                const generatedArticle = await generateArticleFromTopicId(topicId);
+                articleToQuiz = generatedArticle;
+                setArticle(generatedArticle); // Save generated article to state
+                baseProgress = 20;
+                setGenerationProgress({ stage: 'Article generated. Starting quiz creation...', percentage: baseProgress });
+            } else {
+                setGenerationProgress({ stage: 'Initializing...', percentage: 0 });
+            }
+            
+            const onQuizProgress = (progress: GenerationProgress) => {
+                const progressRange = 100 - baseProgress;
+                setGenerationProgress({
+                    stage: progress.stage,
+                    percentage: baseProgress + (progress.percentage / 100) * progressRange,
+                });
+            };
+
+            const generatedQuiz = await generateQuiz(articleToQuiz, onQuizProgress);
             setQuiz(generatedQuiz);
             setUserAnswers(new Array(generatedQuiz.questions.length).fill(null));
             setRevealedHints(new Array(generatedQuiz.questions.length).fill(false));
@@ -81,7 +113,7 @@ const App: React.FC = () => {
         } finally {
             setGenerationProgress(null);
         }
-    }, [article, currentUserId]);
+    }, [article, currentUserId, inputMode, topicId]);
 
     const handleRestart = () => {
         setArticle('');
@@ -95,6 +127,8 @@ const App: React.FC = () => {
         setSelectedAttempt(null);
         setCurrentQuizContext({ historyGroupId: null });
         setAppState('input');
+        setInputMode('paste');
+        setTopicId(1);
     };
 
     const score = useMemo(() => {
@@ -226,6 +260,10 @@ const App: React.FC = () => {
                         onDelete={handleDeleteFromHistory}
                         userId={currentUserId}
                         onLogout={handleLogout}
+                        inputMode={inputMode}
+                        setInputMode={setInputMode}
+                        topicId={topicId}
+                        setTopicId={setTopicId}
                     />
                 );
         }
@@ -327,9 +365,20 @@ interface ArticleInputScreenProps {
     onDelete: (id: string) => void;
     userId: string | null;
     onLogout: () => void;
+    inputMode: InputMode;
+    setInputMode: (mode: InputMode) => void;
+    topicId: number;
+    setTopicId: (id: number) => void;
 }
 
-const ArticleInputScreen: React.FC<ArticleInputScreenProps> = ({ article, setArticle, onGenerate, history, onReview, onRetake, onDelete, userId, onLogout }) => (
+const ArticleInputScreen: React.FC<ArticleInputScreenProps> = ({ 
+    article, setArticle, onGenerate, history, onReview, onRetake, onDelete, userId, onLogout,
+    inputMode, setInputMode, topicId, setTopicId
+}) => {
+    
+    const isGenerateDisabled = (inputMode === 'paste' && !article.trim()) || (inputMode === 'generate' && (topicId < 1 || topicId > 40));
+
+    return (
      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-100 flex flex-col items-center p-4 sm:p-8">
         <div className="w-full max-w-6xl">
             <div className="flex justify-between items-center mb-8">
@@ -348,15 +397,52 @@ const ArticleInputScreen: React.FC<ArticleInputScreenProps> = ({ article, setArt
         <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-8">
             <div className="lg:w-2/3 bg-white rounded-2xl shadow-xl p-8">
                  <h2 className="text-2xl font-bold text-gray-700 mb-4">Generate a New Quiz</h2>
-                <textarea
-                    value={article}
-                    onChange={(e) => setArticle(e.target.value)}
-                    placeholder="Paste your article here..."
-                    className="w-full h-80 p-4 border border-gray-300 rounded-lg resize-y focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow duration-200"
-                />
+                
+                <div className="flex border-b border-gray-200 mb-6">
+                    <button
+                        onClick={() => setInputMode('paste')}
+                        className={`px-6 py-3 font-semibold text-lg transition-colors duration-200 ${inputMode === 'paste' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Paste Article
+                    </button>
+                    <button
+                        onClick={() => setInputMode('generate')}
+                        className={`px-6 py-3 font-semibold text-lg transition-colors duration-200 ${inputMode === 'generate' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Generate from Topic
+                    </button>
+                </div>
+                
+                {inputMode === 'paste' ? (
+                    <textarea
+                        value={article}
+                        onChange={(e) => setArticle(e.target.value)}
+                        placeholder="Paste your article here..."
+                        className="w-full h-80 p-4 border border-gray-300 rounded-lg resize-y focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow duration-200"
+                    />
+                ) : (
+                    <div className="h-80 flex flex-col justify-center items-center bg-gray-50 rounded-lg p-6 border border-gray-300">
+                        <h3 className="text-xl font-semibold text-gray-700">Generate an Article</h3>
+                        <p className="text-gray-500 mt-2 mb-6 text-center">Enter a number to generate a unique TOEFL-style reading passage.</p>
+                        <label htmlFor="topicId" className="font-semibold text-gray-600">Topic ID (1-40)</label>
+                        <input
+                            id="topicId"
+                            type="number"
+                            value={topicId}
+                            onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setTopicId(isNaN(val) ? 1 : val);
+                            }}
+                            min="1"
+                            max="40"
+                            className="w-48 text-center mt-2 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                )}
+                
                 <button
                     onClick={onGenerate}
-                    disabled={!article.trim()}
+                    disabled={isGenerateDisabled}
                     className="mt-6 w-full flex items-center justify-center px-6 py-4 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-300 ease-in-out transform hover:scale-105 shadow-lg disabled:bg-gray-400 disabled:scale-100 disabled:cursor-not-allowed"
                 >
                     <BookOpenIcon className="w-6 h-6 mr-3" />
@@ -381,6 +467,7 @@ const ArticleInputScreen: React.FC<ArticleInputScreenProps> = ({ article, setArt
         </div>
     </div>
 );
+};
 
 interface HistoryCardProps {
     group: QuizHistoryGroup;

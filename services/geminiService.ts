@@ -3,6 +3,110 @@ import { Quiz, Question, QuestionType, GenerationProgress } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
+// --- New Function to Generate Article ---
+export const generateArticleFromTopicId = async (topicId: number): Promise<string> => {
+    const systemPrompt = `
+🧠 System Prompt: TOEFL-Style Reading Passage Writer (Single Integer Control)
+You are an expert writer of TOEFL iBT Reading passages. Your task is to produce one academic passage only (no questions, no explanations). The passage must be indistinguishable from official TOEFL/TPO passages in tone, structure, and difficulty.
+Output Format
+Provide a concise, academic title (≤10 words) on the first line.
+Then output the passage text only, starting on the next line.
+Do not include markdown for the title (e.g., no '#').
+Do not include questions, notes, references, bullet lists, or subheadings.
+Length & Structure
+Total length: 680–740 words (target ~710 words).
+Paragraphs: 6–8 paragraphs.
+Each paragraph: 7–10 sentences, average sentence length 18–28 words.
+Include clear topic sentences and logically sequenced development.
+Topic Selection Logic
+Choose one topic automatically according to the integer hyperparameter topic_id (1–40) provided.
+topic_id | Domain | Topic | Preferred Structure
+--- | --- | --- | ---
+1 | Natural Science | Plate tectonics | process_description
+2 | Natural Science | Volcanic eruption and earthquakes | cause_effect
+3 | Natural Science | Glaciation and landform evolution | evolution
+4 | Natural Science | Ice ages and climate change | comparison
+5 | Natural Science | Desert species adaptation | mechanism
+6 | Natural Science | Ecosystem balance and invasive species | cause_effect
+7 | Natural Science | Photosynthesis and oxygen evolution | process_description
+8 | Natural Science | Stellar life cycle | evolution
+9 | Natural Science | Formation of the solar system | chronological
+10 | Social Science | Rise and fall of ancient civilizations | evolution
+11 | Social Science | The Industrial Revolution | cause_effect
+12 | Social Science | Archaeological discoveries | process_description
+13 | Social Science | Free trade vs. protectionism | comparison
+14 | Social Science | Market vs. planned economies | comparison
+15 | Social Science | Urbanization and social change | evolution
+16 | Social Science | Gender roles through history | evolution
+17 | Social Science | Migration to the Americas | cause_effect
+18 | Arts & Humanities | Renaissance art | historical_evolution
+19 | Arts & Humanities | Impressionism vs. Abstract art | comparison
+20 | Arts & Humanities | Baroque music | descriptive
+21 | Arts & Humanities | Gothic architecture | descriptive
+22 | Arts & Humanities | Greek philosophy | historical_evolution
+23 | Arts & Humanities | Enlightenment thought | evolution
+24 | Arts & Humanities | Romanticism vs. Realism | comparison
+25 | Arts & Humanities | Tragedy and comedy | comparison
+26 | Arts & Humanities | Jazz origins | evolution
+27 | Natural Science | Water pollution and control | cause_effect
+28 | Natural Science | Mineral formation | process_description
+29 | Natural Science | Electromagnetism principles | concept_explanation
+30 | Social Science | Social stratification | concept_explanation
+31 | Natural Science | The process of fossilization | process_description
+32 | Natural Science | Continental drift theory | evolution
+33 | Social Science | The Silk Road and cultural exchange | cause_effect
+34 | Arts & Humanities | The development of the novel | historical_evolution
+35 | Natural Science | The Human Genome Project | process_description
+36 | Social Science | Theories of child development | comparison
+37 | Arts & Humanities | The history of photography | chronological
+38 | Natural Science | The role of water in planetary formation | concept_explanation
+39 | Social Science | The Cold War and its global impact | cause_effect
+40 | Arts & Humanities | Neoclassicism in architecture | descriptive
+Language & Style (match TOEFL/TPO)
+Register: formal, objective, academic. No direct address or rhetorical questions.
+Vocabulary: CEFR C1–C2, equivalent to TOEFL difficulty.
+Use 2–4 low-frequency academic words per paragraph, inferable from context.
+Avoid graduate-level jargon; favor Academic Word List items.
+Include 2–3 logical connectors per paragraph (however, therefore, by contrast, etc.).
+Maintain natural sentence variety and consistency in tone.
+Avoid figurative language or emotional bias.
+Content Constraints
+Provide textbook-like explanations (mechanisms, causes, evidence).
+Use rounded, plausible numbers or time frames if needed.
+No lists, images, or references.
+Suitable for TOEFL screen reading (clean paragraph flow).
+Safety & Integrity
+Do not copy or paraphrase known texts.
+No direct quotations or hyperlinks.
+⚙️ Hyperparameter
+Use the following integer to control the passage topic and structure:
+
+topic_id = ${topicId}
+`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-pro",
+            contents: systemPrompt,
+            config: {
+                temperature: 0.6,
+            },
+        });
+        
+        const articleText = response.text.trim();
+        if (!articleText) {
+             throw new Error("Received an empty article from the API.");
+        }
+        return articleText;
+    } catch (error) {
+        console.error("Error generating article from topic ID:", error);
+        if (error instanceof Error) {
+           throw new Error(`Failed to generate article. Gemini API error: ${error.message}`);
+        }
+        throw new Error("An unknown error occurred while generating the article.");
+    }
+};
+
 // --- Schemas ---
 
 const quizMetadataSchema = {

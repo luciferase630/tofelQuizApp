@@ -37,6 +37,7 @@ const saveAllUserData = (data: { [userId: string]: QuizHistoryGroup[] }) => {
 export const getHistory = (userId: string): QuizHistoryGroup[] => {
     const allData = getAllUserData();
     const userHistory = allData[userId] || [];
+    // Sort by the timestamp of the last attempt in descending order (most recent first)
     return userHistory.sort((a, b) => b.lastAttemptTimestamp - a.lastAttemptTimestamp);
 };
 
