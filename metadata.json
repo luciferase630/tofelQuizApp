@@ -1,0 +1,5 @@
+{
+  "name": "TOEFL Quiz Generator",
+  "description": "An interactive web application that generates a TOEFL-style reading quiz from any provided article using the Gemini API. Users can test their comprehension with various question types, including multiple-choice, sentence insertion, and prose summary.",
+  "requestFramePermissions": []
+}
